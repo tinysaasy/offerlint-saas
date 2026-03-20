@@ -7,8 +7,8 @@ import { browserSupabase } from "../../lib/supabase-browser";
 export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "signup">("signup");
   const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -19,30 +19,71 @@ export default function AuthPage() {
     })();
   }, [router]);
 
-  const submit = async () => {
+  const login = async () => {
     if (!browserSupabase) return setMsg("Supabase auth not configured.");
-    setMsg("Working...");
-
-    const fn = mode === "signup" ? browserSupabase.auth.signUp : browserSupabase.auth.signInWithPassword;
-    const { error } = await fn({ email, password });
-
+    setBusy(true);
+    setMsg("Authenticating...");
+    const { error } = await browserSupabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
     if (error) return setMsg(error.message);
-    setMsg(mode === "signup" ? "Account created. Check your inbox if email confirmation is enabled." : "Logged in.");
+    setMsg("Logged in.");
     router.push("/app");
+  };
+
+  const signup = async () => {
+    if (!browserSupabase) return setMsg("Supabase auth not configured.");
+    setBusy(true);
+    setMsg("Creating account...");
+    const { error, data } = await browserSupabase.auth.signUp({ email, password });
+
+    // If email confirmations are disabled, session is returned immediately.
+    if (!error && data.session) {
+      setBusy(false);
+      setMsg("Account created and logged in.");
+      router.push("/app");
+      return;
+    }
+
+    // Fallback: magic link if confirmation flow is required.
+    if (!error && !data.session) {
+      const { error: otpError } = await browserSupabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/app` },
+      });
+      setBusy(false);
+      if (otpError) return setMsg(`Signup requires confirmation: ${otpError.message}`);
+      return setMsg("Check your email: magic link sent.");
+    }
+
+    setBusy(false);
+    if (error?.message?.toLowerCase().includes("already")) {
+      return login();
+    }
+    setMsg(error?.message || "Signup failed.");
+  };
+
+  const magicLink = async () => {
+    if (!browserSupabase) return setMsg("Supabase auth not configured.");
+    setBusy(true);
+    const { error } = await browserSupabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/app` },
+    });
+    setBusy(false);
+    setMsg(error ? error.message : "Magic link sent. Check inbox.");
   };
 
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#060a12" }}>
-      <section style={{ width: 420, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: 24 }}>
+      <section style={{ width: 430, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: 24 }}>
         <h1 style={{ marginTop: 0 }}>OfferLint Auth</h1>
-        <p style={{ opacity: 0.75, marginTop: -8 }}>Clean signup/login flow for SaaS users.</p>
+        <p style={{ opacity: 0.75, marginTop: -8 }}>Sign up / login to access the SaaS.</p>
         <div style={{ display: "grid", gap: 10 }}>
           <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={input} />
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={input} />
-          <button onClick={submit} style={btn}>{mode === "signup" ? "Create account" : "Login"}</button>
-          <button onClick={() => setMode(mode === "signup" ? "login" : "signup")} style={ghost}>
-            Switch to {mode === "signup" ? "login" : "signup"}
-          </button>
+          <button disabled={busy} onClick={signup} style={btn}>Create account</button>
+          <button disabled={busy} onClick={login} style={ghost}>Login</button>
+          <button disabled={busy} onClick={magicLink} style={ghost}>Send magic link</button>
           {msg ? <p style={{ opacity: 0.85, fontSize: 14 }}>{msg}</p> : null}
         </div>
       </section>
