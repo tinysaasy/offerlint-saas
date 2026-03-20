@@ -7,12 +7,19 @@
   - login
   - magic-link fallback
   - auto-redirect to `/app` after session
-- Dashboard remains protected by session check
+- Built real SaaS shell (sidebar navigation, profile/logout, settings)
+- Added core SaaS pages:
+  - Dashboard (`/app`)
+  - Analyzer (`/app/analyze`)
+  - Projects (`/app/projects`)
+  - Settings (`/app/settings`)
+- Hardened analyze API to require authenticated bearer token
+- Added per-user data model + RLS SQL for analyses/projects
 
 ## In Progress
-- Harden API access to authenticated users only
 - UX polish pass (Linear/Apple quality details)
 - onboarding improvements after first login
+- copy optimization for pricing/conversion
 
 ## Blocker
 - No direct Asana API connection configured in this runtime.

@@ -1,74 +1,60 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { browserSupabase } from "../../lib/supabase-browser";
 
 type Row = { id: string; score: number; verdict: string; headline: string; created_at: string };
 
-export default function AppDashboard() {
+export default function Dashboard() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     (async () => {
-      if (!browserSupabase) return setLoading(false);
+      if (!browserSupabase) return;
       const { data } = await browserSupabase.auth.getSession();
-      if (!data.session) return router.replace("/auth");
-
+      const uid = data.session?.user.id;
+      if (!uid) return;
       const { data: list } = await browserSupabase
         .from("analyses")
         .select("id,score,verdict,headline,created_at")
+        .eq("user_id", uid)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(12);
       setRows((list || []) as Row[]);
-      setLoading(false);
     })();
-  }, [router]);
+  }, []);
 
-  const logout = async () => {
-    await browserSupabase?.auth.signOut();
-    router.push("/auth");
-  };
+  const avg = rows.length ? Math.round(rows.reduce((a, r) => a + r.score, 0) / rows.length) : 0;
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: "42px 20px" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>OfferLint Console</h1>
-          <p style={{ opacity: 0.7, margin: 0 }}>Linear-style operator view.</p>
+    <div style={{ display: "grid", gap: 16 }}>
+      <h1 style={{ margin: 0 }}>Dashboard</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
+        <Card title="Analyses" value={String(rows.length)} />
+        <Card title="Avg Score" value={`${avg}`} />
+        <Card title="Win Focus" value={rows.filter(r => r.score >= 80).length.toString()} />
+      </div>
+      <section style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>Recent analyses</h3>
+          <Link href="/app/analyze" style={{ color: "#bcd0ff" }}>New analysis</Link>
         </div>
-        <button onClick={logout} style={{ ...btn, padding: "8px 12px" }}>Logout</button>
-      </header>
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <section style={{ border: "1px solid #243252", borderRadius: 14, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#0f1628", textAlign: "left" }}>
-                <th style={th}>Score</th><th style={th}>Verdict</th><th style={th}>Headline</th><th style={th}>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} style={{ borderTop: "1px solid #1f2b46" }}>
-                  <td style={td}>{r.score}</td>
-                  <td style={td}>{r.verdict}</td>
-                  <td style={td}>{r.headline}</td>
-                  <td style={td}>{new Date(r.created_at).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-    </main>
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          {rows.map(r => (
+            <div key={r.id} style={{ border: "1px solid #223155", borderRadius: 10, padding: 10 }}>
+              <strong>{r.score}/100</strong> · {r.verdict} · {r.headline}
+            </div>
+          ))}
+          {!rows.length && <p style={{ opacity: .75 }}>No analyses yet.</p>}
+        </div>
+      </section>
+    </div>
   );
 }
 
-const th: React.CSSProperties = { padding: "12px 14px", fontWeight: 600, fontSize: 13, color: "#aebaf0" };
-const td: React.CSSProperties = { padding: "12px 14px", fontSize: 14 };
-const btn: React.CSSProperties = { background: "#6f86ff", color: "white", border: 0, borderRadius: 10, cursor: "pointer" };
+function Card({ title, value }: { title: string; value: string }) {
+  return <div style={card}><div style={{ opacity: .75, fontSize: 13 }}>{title}</div><div style={{ fontSize: 28, fontWeight: 700 }}>{value}</div></div>;
+}
+
+const card: React.CSSProperties = { border: "1px solid #223155", borderRadius: 14, padding: 14, background: "#0a1223" };
