@@ -21,6 +21,20 @@
 - onboarding improvements after first login
 - copy optimization for pricing/conversion
 
+## New Milestone Delivered
+- CRM end-to-end added (`/app/crm`)
+  - contact management
+  - Dunbar relationship tiers (Core 5 / Circle 15 / Network 50 / Extended 150)
+  - relationship tasks linked to contacts
+- Mobile responsive app shell improved
+  - menu toggle for smaller screens
+  - responsive grids across CRM pages
+- DB schema extended with:
+  - `crm_contacts`
+  - `crm_interactions`
+  - `crm_tasks`
+  - RLS per-user policies
+
 ## Blocker
 - No direct Asana API connection configured in this runtime.
   When credentials/integration are provided, this file can be auto-synced.
