@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Globe } from "@/components/ui/globe";
 import { browserSupabase } from "../../lib/supabase-browser";
 
 type Row = { id: string; score: number; verdict: string; headline: string; created_at: string };
@@ -46,7 +47,14 @@ export default function Dashboard() {
               <strong>{r.score}/100</strong> · {r.verdict} · {r.headline}
             </div>
           ))}
-          {!rows.length && <p style={{ opacity: .75 }}>No analyses yet.</p>}
+          {!rows.length && (
+            <div style={{ position: "relative", minHeight: 260, border: "1px solid #223155", borderRadius: 12, overflow: "hidden" }}>
+              <Globe className="top-6" />
+              <div style={{ position: "absolute", bottom: 12, left: 12, right: 12, textAlign: "center", fontSize: 13, opacity: 0.9 }}>
+                No analyses yet — start with your first offer audit.
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </div>

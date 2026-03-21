@@ -1,126 +1,128 @@
--- Enable email/password auth in Supabase dashboard.
--- This schema stores app data only.
+-- Vita Santé Club MVP schema (Phase 1)
 
-create table if not exists analyses (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  email text,
-  headline text not null,
-  audience text not null,
-  offer text not null,
-  proof text,
-  cta text,
-  score int not null,
-  verdict text not null,
-  issues jsonb not null,
-  rewrite jsonb not null,
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  role text not null check (role in ('member','doctor','affiliate','sponsor','admin')),
+  full_name text,
+  locale text not null default 'fr',
   created_at timestamptz not null default now()
 );
 
-alter table analyses add column if not exists user_id uuid references auth.users(id) on delete cascade;
-
-create table if not exists projects (
+create table if not exists plans (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  target_score int not null default 85,
+  code text unique not null,
+  name_fr text not null,
+  name_en text not null,
+  monthly_price_usd numeric(10,2) not null,
+  credits_monthly int not null default 0,
+  is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
-create table if not exists waitlist (
+create table if not exists members (
   id uuid primary key default gen_random_uuid(),
-  email text not null,
-  note text,
-  source text,
+  user_id uuid unique references auth.users(id) on delete cascade,
+  plan_id uuid references plans(id),
+  member_number text unique,
+  status text not null default 'pending' check (status in ('pending','active','suspended','cancelled')),
+  credits_balance int not null default 0,
+  country text,
+  is_diaspora boolean not null default false,
   created_at timestamptz not null default now()
 );
 
-create table if not exists crm_contacts (
+create table if not exists doctors (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid unique references auth.users(id) on delete cascade,
   full_name text not null,
-  company text,
-  relationship_tier text not null check (relationship_tier in ('core_5','circle_15','network_50','extended_150')),
-  warmth_score int not null default 50,
-  last_contact_at timestamptz,
-  notes text,
+  city text,
+  specialty text,
+  partner_status text not null default 'pending' check (partner_status in ('pending','active','inactive')),
   created_at timestamptz not null default now()
 );
 
-create table if not exists crm_interactions (
+create table if not exists member_cards (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  contact_id uuid not null references crm_contacts(id) on delete cascade,
-  channel text not null default 'dm',
-  summary text,
-  happened_at timestamptz not null default now(),
+  member_id uuid not null references members(id) on delete cascade,
+  card_number text unique not null,
+  qr_token text unique not null,
+  valid_until date,
+  storage_path text,
   created_at timestamptz not null default now()
 );
 
-create table if not exists crm_tasks (
+create table if not exists affiliations (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  contact_id uuid references crm_contacts(id) on delete set null,
-  title text not null,
-  due_at timestamptz,
-  status text not null default 'todo' check (status in ('todo','doing','done')),
+  affiliate_user_id uuid references auth.users(id) on delete set null,
+  sponsor_user_id uuid references auth.users(id) on delete set null,
+  member_id uuid not null references members(id) on delete cascade,
+  commission_rate numeric(5,2) not null default 0,
   created_at timestamptz not null default now()
 );
 
-alter table analyses enable row level security;
-alter table projects enable row level security;
-alter table waitlist enable row level security;
-alter table crm_contacts enable row level security;
-alter table crm_interactions enable row level security;
-alter table crm_tasks enable row level security;
+create table if not exists payments (
+  id uuid primary key default gen_random_uuid(),
+  member_id uuid not null references members(id) on delete cascade,
+  stripe_payment_intent_id text unique,
+  amount_usd numeric(10,2) not null,
+  currency text not null default 'usd',
+  status text not null default 'pending' check (status in ('pending','succeeded','failed','refunded')),
+  created_at timestamptz not null default now()
+);
 
--- Per-user data isolation.
-drop policy if exists "analyses_select_own" on analyses;
-create policy "analyses_select_own" on analyses for select to authenticated using (auth.uid() = user_id);
+create table if not exists enrollment_intakes (
+  id uuid primary key default gen_random_uuid(),
+  flow_type text not null check (flow_type in ('standard','diaspora')),
+  plan_code text not null,
+  payer_full_name text,
+  payer_email text,
+  beneficiary_full_name text not null,
+  beneficiary_email text not null,
+  beneficiary_phone text not null,
+  beneficiary_address text not null,
+  beneficiary_country text not null default 'HT',
+  nif text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "projects_select_own" on projects;
-create policy "projects_select_own" on projects for select to authenticated using (auth.uid() = user_id);
+create table if not exists enrollment_dependents (
+  id uuid primary key default gen_random_uuid(),
+  intake_id uuid not null references enrollment_intakes(id) on delete cascade,
+  full_name text not null,
+  relationship text not null,
+  date_of_birth date,
+  created_at timestamptz not null default now()
+);
 
-drop policy if exists "projects_insert_own" on projects;
-create policy "projects_insert_own" on projects for insert to authenticated with check (auth.uid() = user_id);
+-- RLS
+alter table profiles enable row level security;
+alter table members enable row level security;
+alter table doctors enable row level security;
+alter table member_cards enable row level security;
+alter table affiliations enable row level security;
+alter table payments enable row level security;
+alter table plans enable row level security;
+alter table enrollment_intakes enable row level security;
+alter table enrollment_dependents enable row level security;
 
-drop policy if exists "projects_update_own" on projects;
-create policy "projects_update_own" on projects for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- Profile self read
+create policy if not exists profiles_select_self on profiles for select to authenticated using (id = auth.uid());
 
-drop policy if exists "projects_delete_own" on projects;
-create policy "projects_delete_own" on projects for delete to authenticated using (auth.uid() = user_id);
+-- Members self read
+create policy if not exists members_select_self on members for select to authenticated using (user_id = auth.uid());
 
--- CRM policies
-drop policy if exists "crm_contacts_select_own" on crm_contacts;
-create policy "crm_contacts_select_own" on crm_contacts for select to authenticated using (auth.uid() = user_id);
-drop policy if exists "crm_contacts_insert_own" on crm_contacts;
-create policy "crm_contacts_insert_own" on crm_contacts for insert to authenticated with check (auth.uid() = user_id);
-drop policy if exists "crm_contacts_update_own" on crm_contacts;
-create policy "crm_contacts_update_own" on crm_contacts for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
-drop policy if exists "crm_contacts_delete_own" on crm_contacts;
-create policy "crm_contacts_delete_own" on crm_contacts for delete to authenticated using (auth.uid() = user_id);
+-- Doctors self read
+create policy if not exists doctors_select_self on doctors for select to authenticated using (user_id = auth.uid());
 
-drop policy if exists "crm_interactions_select_own" on crm_interactions;
-create policy "crm_interactions_select_own" on crm_interactions for select to authenticated using (auth.uid() = user_id);
-drop policy if exists "crm_interactions_insert_own" on crm_interactions;
-create policy "crm_interactions_insert_own" on crm_interactions for insert to authenticated with check (auth.uid() = user_id);
-drop policy if exists "crm_interactions_update_own" on crm_interactions;
-create policy "crm_interactions_update_own" on crm_interactions for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
-drop policy if exists "crm_interactions_delete_own" on crm_interactions;
-create policy "crm_interactions_delete_own" on crm_interactions for delete to authenticated using (auth.uid() = user_id);
+-- Plans readable by authenticated
+create policy if not exists plans_select_all on plans for select to authenticated using (true);
 
-drop policy if exists "crm_tasks_select_own" on crm_tasks;
-create policy "crm_tasks_select_own" on crm_tasks for select to authenticated using (auth.uid() = user_id);
-drop policy if exists "crm_tasks_insert_own" on crm_tasks;
-create policy "crm_tasks_insert_own" on crm_tasks for insert to authenticated with check (auth.uid() = user_id);
-drop policy if exists "crm_tasks_update_own" on crm_tasks;
-create policy "crm_tasks_update_own" on crm_tasks for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
-drop policy if exists "crm_tasks_delete_own" on crm_tasks;
-create policy "crm_tasks_delete_own" on crm_tasks for delete to authenticated using (auth.uid() = user_id);
+-- Intakes are server-written for now.
+drop policy if exists enrollment_intakes_none on enrollment_intakes;
+create policy enrollment_intakes_none on enrollment_intakes for all to anon, authenticated using (false) with check (false);
 
--- Prevent direct client writes to analyses/waitlist; server routes use service role.
-drop policy if exists "analyses_insert_none" on analyses;
-create policy "analyses_insert_none" on analyses for insert to anon, authenticated with check (false);
+drop policy if exists enrollment_dependents_none on enrollment_dependents;
+create policy enrollment_dependents_none on enrollment_dependents for all to anon, authenticated using (false) with check (false);
 
-drop policy if exists "waitlist_insert_none" on waitlist;
-create policy "waitlist_insert_none" on waitlist for insert to anon, authenticated with check (false);
+-- Admin/service writes are handled server-side (service role).
