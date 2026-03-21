@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSupabase } from "../../lib/supabase-browser";
 
+type Role = "member" | "doctor" | "affiliate" | "sponsor";
+
 export default function AuthPage() {
+  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [role, setRole] = useState<Role>("member");
+  const [fullName, setFullName] = useState("");
+  const [locale, setLocale] = useState<"fr" | "en">("fr");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
@@ -15,82 +21,94 @@ export default function AuthPage() {
     (async () => {
       if (!browserSupabase) return;
       const { data } = await browserSupabase.auth.getSession();
-      if (data.session) router.replace("/app");
+      if (data.session) router.replace("/dashboard");
     })();
   }, [router]);
 
   const login = async () => {
     if (!browserSupabase) return setMsg("Supabase auth not configured.");
     setBusy(true);
-    setMsg("Authenticating...");
     const { error } = await browserSupabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) return setMsg(error.message);
-    setMsg("Logged in.");
-    router.push("/app");
+    router.push("/dashboard");
   };
 
   const signup = async () => {
     if (!browserSupabase) return setMsg("Supabase auth not configured.");
     setBusy(true);
-    setMsg("Creating account...");
+    setMsg("Création du compte...");
+
     const { error, data } = await browserSupabase.auth.signUp({ email, password });
-
-    // If email confirmations are disabled, session is returned immediately.
-    if (!error && data.session) {
+    if (error) {
       setBusy(false);
-      setMsg("Account created and logged in.");
-      router.push("/app");
-      return;
+      return setMsg(error.message);
     }
 
-    // Fallback: magic link if confirmation flow is required.
-    if (!error && !data.session) {
-      const { error: otpError } = await browserSupabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: `${window.location.origin}/app` },
-      });
+    const session = data.session || (await browserSupabase.auth.getSession()).data.session;
+    if (!session) {
       setBusy(false);
-      if (otpError) return setMsg(`Signup requires confirmation: ${otpError.message}`);
-      return setMsg("Check your email: magic link sent.");
+      return setMsg("Compte créé. Vérifie ton email pour finaliser la connexion.");
     }
 
-    setBusy(false);
-    if (error?.message?.toLowerCase().includes("already")) {
-      return login();
-    }
-    setMsg(error?.message || "Signup failed.");
-  };
-
-  const magicLink = async () => {
-    if (!browserSupabase) return setMsg("Supabase auth not configured.");
-    setBusy(true);
-    const { error } = await browserSupabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/app` },
+    const res = await fetch("/api/profile/init", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ role, full_name: fullName, locale }),
     });
+
+    const payload = await res.json();
     setBusy(false);
-    setMsg(error ? error.message : "Magic link sent. Check inbox.");
+    if (!res.ok) return setMsg(payload.error || "Initialisation profil échouée.");
+    router.push("/dashboard");
   };
 
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#060a12" }}>
-      <section style={{ width: 430, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: 24 }}>
-        <h1 style={{ marginTop: 0 }}>OfferLint Auth</h1>
-        <p style={{ opacity: 0.75, marginTop: -8 }}>Sign up / login to access the SaaS.</p>
-        <div style={{ display: "grid", gap: 10 }}>
+    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "radial-gradient(circle at 20% 0%, #1b2850, #050912 55%)" }}>
+      <section style={{ width: 460, maxWidth: "92vw", borderRadius: 20, border: "1px solid rgba(255,255,255,.14)", background: "rgba(9,14,28,.8)", padding: 24, backdropFilter: "blur(8px)" }}>
+        <h1 style={{ marginTop: 0, marginBottom: 6 }}>Vita Santé Auth</h1>
+        <p style={{ opacity: .75, marginTop: 0 }}>Connexion propre par rôle (member / doctor / affiliate / sponsor)</p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button onClick={() => setMode("signup")} style={mode === "signup" ? btn : ghost}>Sign up</button>
+          <button onClick={() => setMode("login")} style={mode === "login" ? btn : ghost}>Login</button>
+        </div>
+
+        <div style={{ display: "grid", gap: 9 }}>
+          {mode === "signup" && (
+            <>
+              <input placeholder="Nom complet" value={fullName} onChange={(e) => setFullName(e.target.value)} style={input} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <select value={role} onChange={(e) => setRole(e.target.value as Role)} style={input}>
+                  <option value="member">Membre</option>
+                  <option value="doctor">Médecin</option>
+                  <option value="affiliate">Affilié</option>
+                  <option value="sponsor">Sponsor</option>
+                </select>
+                <select value={locale} onChange={(e) => setLocale(e.target.value as "fr" | "en")} style={input}>
+                  <option value="fr">FR</option>
+                  <option value="en">EN</option>
+                </select>
+              </div>
+            </>
+          )}
           <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={input} />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={input} />
-          <button disabled={busy} onClick={signup} style={btn}>Create account</button>
-          <button disabled={busy} onClick={login} style={ghost}>Login</button>
-          <button disabled={busy} onClick={magicLink} style={ghost}>Send magic link</button>
-          {msg ? <p style={{ opacity: 0.85, fontSize: 14 }}>{msg}</p> : null}
+          <input type="password" placeholder="Mot de passe" value={password} onChange={(e) => setPassword(e.target.value)} style={input} />
+          {mode === "signup" ? (
+            <button onClick={signup} disabled={busy} style={btn}>{busy ? "Création..." : "Créer mon compte"}</button>
+          ) : (
+            <button onClick={login} disabled={busy} style={btn}>{busy ? "Connexion..." : "Se connecter"}</button>
+          )}
+          {msg ? <p style={{ margin: 0, fontSize: 13, opacity: .9 }}>{msg}</p> : null}
         </div>
       </section>
     </main>
   );
 }
 
-const input: React.CSSProperties = { background: "#0f1626", color: "#eaf0ff", border: "1px solid #283654", borderRadius: 12, padding: "11px 12px" };
-const btn: React.CSSProperties = { background: "linear-gradient(180deg,#8ca1ff,#6d84f8)", color: "white", border: 0, borderRadius: 12, padding: "11px 12px", cursor: "pointer", fontWeight: 600 };
-const ghost: React.CSSProperties = { background: "transparent", color: "#b6c3f7", border: "1px solid #283654", borderRadius: 12, padding: "11px 12px", cursor: "pointer" };
+const input: React.CSSProperties = { background: "#0e162d", color: "#eaf0ff", border: "1px solid #2a3b67", borderRadius: 12, padding: "11px 12px" };
+const btn: React.CSSProperties = { background: "linear-gradient(180deg,#88a0ff,#6d84f8)", color: "white", border: 0, borderRadius: 12, padding: "11px 12px", cursor: "pointer", fontWeight: 600 };
+const ghost: React.CSSProperties = { background: "transparent", color: "#c7d4ff", border: "1px solid #2a3b67", borderRadius: 12, padding: "10px 12px", cursor: "pointer", flex: 1 };

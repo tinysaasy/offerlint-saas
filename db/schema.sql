@@ -116,8 +116,13 @@ alter table enrollment_intakes enable row level security;
 alter table enrollment_dependents enable row level security;
 alter table doctor_visits enable row level security;
 
--- Profile self read
-create policy if not exists profiles_select_self on profiles for select to authenticated using (id = auth.uid());
+-- Profile self read/write
+drop policy if exists profiles_select_self on profiles;
+create policy profiles_select_self on profiles for select to authenticated using (id = auth.uid());
+drop policy if exists profiles_insert_self on profiles;
+create policy profiles_insert_self on profiles for insert to authenticated with check (id = auth.uid());
+drop policy if exists profiles_update_self on profiles;
+create policy profiles_update_self on profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 -- Members self read
 create policy if not exists members_select_self on members for select to authenticated using (user_id = auth.uid());
