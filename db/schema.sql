@@ -95,6 +95,15 @@ create table if not exists enrollment_dependents (
   created_at timestamptz not null default now()
 );
 
+create table if not exists doctor_visits (
+  id uuid primary key default gen_random_uuid(),
+  member_id uuid not null references members(id) on delete cascade,
+  service_type text not null check (service_type in ('general','specialist','lab')),
+  note text,
+  visited_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
 -- RLS
 alter table profiles enable row level security;
 alter table members enable row level security;
@@ -105,6 +114,7 @@ alter table payments enable row level security;
 alter table plans enable row level security;
 alter table enrollment_intakes enable row level security;
 alter table enrollment_dependents enable row level security;
+alter table doctor_visits enable row level security;
 
 -- Profile self read
 create policy if not exists profiles_select_self on profiles for select to authenticated using (id = auth.uid());
@@ -124,5 +134,8 @@ create policy enrollment_intakes_none on enrollment_intakes for all to anon, aut
 
 drop policy if exists enrollment_dependents_none on enrollment_dependents;
 create policy enrollment_dependents_none on enrollment_dependents for all to anon, authenticated using (false) with check (false);
+
+drop policy if exists doctor_visits_none on doctor_visits;
+create policy doctor_visits_none on doctor_visits for all to anon, authenticated using (false) with check (false);
 
 -- Admin/service writes are handled server-side (service role).
